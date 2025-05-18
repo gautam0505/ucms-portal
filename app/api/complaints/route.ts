@@ -50,8 +50,8 @@ export async function GET(request: NextRequest) {
       .from("complaints")
       .select(
         `id, title, category, status, created_at, escalation, assigned_to, user_id,
-         user_profile:profiles!complaints_user_id_fkey(id, full_name, email, mobile),
-         assigned_profile:profiles!complaints_assigned_to_fkey(id, full_name, email, mobile)`
+         user_profile:profiles!complaints_user_id_fkey(id, full_name, email),
+         assigned_profile:profiles!complaints_assigned_to_fkey(id, full_name, email)`
       )
       .order("created_at", { ascending: false })
       .range(from, to);
@@ -98,7 +98,6 @@ export async function GET(request: NextRequest) {
       citizen: {
         name: complaint.user_profile?.full_name,
         email: complaint.user_profile?.email,
-        mobile: complaint.user_profile?.mobile,
       },
       assignedProfile: complaint.assigned_profile || null,
     }));
