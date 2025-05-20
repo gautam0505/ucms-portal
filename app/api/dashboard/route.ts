@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
         {
           id: 3,
           title: "Streetlight not working",
-          category: "electricity",
+          category: "",
           createdAt: new Date(),
           daysOverdue: 10,
         },

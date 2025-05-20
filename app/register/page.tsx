@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import {
   Form,
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -37,15 +36,6 @@ const formSchema = z
     email: z.string().email({
       message: "Please enter a valid email address.",
     }),
-    mobile: z.string().regex(/^[6-9]\d{9}$/, {
-      message: "Please enter a valid 10-digit mobile number.",
-    }),
-    otp: z
-      .string()
-      .length(6, {
-        message: "OTP must be 6 digits.",
-      })
-      .optional(),
     password: z.string().min(8, {
       message: "Password must be at least 8 characters.",
     }),
@@ -60,8 +50,6 @@ export default function RegisterPage() {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpResendTimer, setOtpResendTimer] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -70,93 +58,27 @@ export default function RegisterPage() {
     defaultValues: {
       fullName: "",
       email: "",
-      mobile: "",
-      otp: "",
       password: "",
       confirmPassword: "",
     },
   });
 
-  const handleSendOTP = async () => {
-    const mobile = form.getValues("mobile");
-    if (!/^[6-9]\d{9}$/.test(mobile)) {
-      form.setError("mobile", {
-        type: "manual",
-        message: "Please enter a valid 10-digit mobile number.",
-      });
-      return;
-    }
-
-    try {
-      // Call API to send OTP
-      const response = await fetch("/api/auth/send-otp", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          mobile,
-          purpose: "registration",
-        }),
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || "Failed to send OTP");
-      }
-
-      // OTP sent successfully
-      setOtpSent(true);
-      setOtpResendTimer(30);
-
-      // Start countdown timer
-      const timer = setInterval(() => {
-        setOtpResendTimer((prev) => {
-          if (prev <= 1) {
-            clearInterval(timer);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-
-      toast({
-        title: "OTP Sent",
-        description: "A one-time password has been sent to your mobile number.",
-      });
-    } catch (error) {
-      console.error("Error sending OTP:", error);
-      toast({
-        title: "Error",
-        description:
-          error instanceof Error ? error.message : "Failed to send OTP",
-        variant: "destructive",
-      });
-    }
-  };
-
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
-    if (otpSent && !values.otp) {
-      form.setError("otp", {
-        type: "manual",
-        message: "OTP is required.",
-      });
-      return;
-    }
-
     setIsSubmitting(true);
     setError(null);
 
     try {
-      const { error } = await registerUser(values.email, values.password);
-      if (error) {
-        setError(error.message || "Registration failed");
-        toast({
-          title: "Registration Failed",
-          description: error.message || "Registration failed",
-          variant: "destructive",
-        });
-        return;
+      // Register with Supabase Auth and create profile
+      const { error: authError } = await registerUser(
+        values.email,
+        values.password,
+        values.fullName
+      );
+
+      if (authError) {
+        throw new Error(
+          typeof authError === "string" ? authError : authError.message
+        );
       }
 
       toast({
@@ -201,11 +123,9 @@ export default function RegisterPage() {
                 name="fullName"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>
-                      Full Name <span className="text-destructive">*</span>
-                    </FormLabel>
+                    <FormLabel>Full Name</FormLabel>
                     <FormControl>
-                      <Input placeholder="Enter your full name" {...field} />
+                      <Input placeholder="John Doe" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -217,13 +137,11 @@ export default function RegisterPage() {
                 name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>
-                      Email <span className="text-destructive">*</span>
-                    </FormLabel>
+                    <FormLabel>Email</FormLabel>
                     <FormControl>
                       <Input
                         type="email"
-                        placeholder="Enter your email"
+                        placeholder="john@example.com"
                         {...field}
                       />
                     </FormControl>
@@ -234,104 +152,32 @@ export default function RegisterPage() {
 
               <FormField
                 control={form.control}
-                name="mobile"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      Mobile Number <span className="text-destructive">*</span>
-                    </FormLabel>
-                    <div className="flex gap-2">
-                      <FormControl>
-                        <Input
-                          placeholder="10-digit mobile number"
-                          {...field}
-                          disabled={otpSent}
-                          inputMode="numeric"
-                        />
-                      </FormControl>
-                      <Button
-                        type="button"
-                        onClick={handleSendOTP}
-                        disabled={otpSent && otpResendTimer > 0}
-                      >
-                        {otpSent
-                          ? otpResendTimer > 0
-                            ? `Resend in ${otpResendTimer}s`
-                            : "Resend OTP"
-                          : "Send OTP"}
-                      </Button>
-                    </div>
-                    <FormDescription>
-                      We'll send a one-time password to verify your mobile
-                      number
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {otpSent && (
-                <FormField
-                  control={form.control}
-                  name="otp"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        OTP <span className="text-destructive">*</span>
-                      </FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="Enter 6-digit OTP"
-                          {...field}
-                          maxLength={6}
-                          inputMode="numeric"
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        Enter the OTP sent to your mobile number
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              )}
-
-              <FormField
-                control={form.control}
                 name="password"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>
-                      Password <span className="text-destructive">*</span>
-                    </FormLabel>
-                    <div className="relative">
-                      <FormControl>
+                    <FormLabel>Password</FormLabel>
+                    <FormControl>
+                      <div className="relative">
                         <Input
                           type={showPassword ? "text" : "password"}
-                          placeholder="Create a password"
+                          placeholder="Enter your password"
                           {...field}
                         />
-                      </FormControl>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="absolute right-0 top-0 h-full px-3"
-                        onClick={() => setShowPassword(!showPassword)}
-                        aria-label={
-                          showPassword ? "Hide password" : "Show password"
-                        }
-                      >
-                        {showPassword ? (
-                          <EyeOff className="h-4 w-4" />
-                        ) : (
-                          <Eye className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
-                    <FormDescription>
-                      Password must be at least 8 characters
-                    </FormDescription>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                          onClick={() => setShowPassword(!showPassword)}
+                        >
+                          {showPassword ? (
+                            <EyeOff className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -342,64 +188,56 @@ export default function RegisterPage() {
                 name="confirmPassword"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>
-                      Confirm Password{" "}
-                      <span className="text-destructive">*</span>
-                    </FormLabel>
-                    <div className="relative">
-                      <FormControl>
+                    <FormLabel>Confirm Password</FormLabel>
+                    <FormControl>
+                      <div className="relative">
                         <Input
                           type={showConfirmPassword ? "text" : "password"}
                           placeholder="Confirm your password"
                           {...field}
                         />
-                      </FormControl>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="absolute right-0 top-0 h-full px-3"
-                        onClick={() =>
-                          setShowConfirmPassword(!showConfirmPassword)
-                        }
-                        aria-label={
-                          showConfirmPassword
-                            ? "Hide password"
-                            : "Show password"
-                        }
-                      >
-                        {showConfirmPassword ? (
-                          <EyeOff className="h-4 w-4" />
-                        ) : (
-                          <Eye className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                          onClick={() =>
+                            setShowConfirmPassword(!showConfirmPassword)
+                          }
+                        >
+                          {showConfirmPassword ? (
+                            <EyeOff className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
 
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={isSubmitting || (otpSent && !form.getValues("otp"))}
-              >
-                {isSubmitting && (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <Button type="submit" className="w-full" disabled={isSubmitting}>
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Creating account...
+                  </>
+                ) : (
+                  "Create account"
                 )}
-                Register
               </Button>
             </form>
           </Form>
         </CardContent>
-        <CardFooter className="flex justify-center">
-          <p className="text-sm text-muted-foreground">
+        <CardFooter className="flex flex-col space-y-4">
+          <div className="text-sm text-muted-foreground text-center">
             Already have an account?{" "}
             <Link href="/login" className="text-primary hover:underline">
               Login
             </Link>
-          </p>
+          </div>
         </CardFooter>
       </Card>
     </div>
